@@ -49,11 +49,14 @@ FILE *get_handle(int  argc,
         switch (argc) {
         case 1: handle = stdin; break;
         case 2: 
-                if ((handle = fopen(argv[1], "r")) == NULL)
-                        p_exit_error();
+                if ((handle = fopen(argv[1], "r")) == NULL) {
+                        fprintf(stderr, "An error has occurred\n");
+                        exit(1);
+                }
                 break;
         default:
-                p_exit_error();
+                fprintf(stderr, "An error has occurred\n");
+                exit(1);
         }
 
         return handle;
@@ -96,28 +99,43 @@ char *p_prompt(FILE *handle)
  */
 char **tokenize(char *line)
 {
-       char     **tokens    = NULL; 
-       int      pos         = 0;
-       int      bufsize     = STRTOK_BUFSIZE;
+        char     **tokens    = NULL; 
+        int      pos         = 0;
+        int      bufsize     = STRTOK_BUFSIZE;
 
-       tokens = (char **)malloc(sizeof(char*) * bufsize);
-       if (tokens == NULL)
-               return NULL;
+        tokens = (char **)malloc(sizeof(char*) * bufsize);
+        if (tokens == NULL)
+                return NULL;
 
-       tokens[pos] = strtok(line, STRTOK_DELIMITERS);
+        while (*line == '\n' ||
+               *line == '\b' ||
+               *line == ' '   )
+                line++;
 
-       while (tokens[pos] != NULL) {
-               pos++;
-               if (pos >= bufsize) {
-                       bufsize += GETLINE_BUFSIZE;
-                       tokens = realloc(tokens, sizeof(char*) * bufsize);
-               }
-               tokens[pos] = strtok(NULL, STRTOK_DELIMITERS);
-       }
+        if (*line == '\0') {
+                tokens[0] = "\0";
+                return tokens;
+        }
 
-       return tokens;
+        tokens[pos] = strtok(line, STRTOK_DELIMITERS);
+
+        while (tokens[pos] != NULL) {
+                pos++;
+                if (pos >= bufsize) {
+                        bufsize += GETLINE_BUFSIZE;
+                        tokens = realloc(tokens, sizeof(char*) * bufsize);
+                }
+                tokens[pos] = strtok(NULL, STRTOK_DELIMITERS);
+        }
+
+        return tokens;
 }
 
+/*
+ *      Function redir
+ *      Manages the redirection of stdout to another output using the dup2
+ *      system call and appropiately treats file errors.
+ */
 void redir(char *file_out)
 {
         int fout;
@@ -154,6 +172,7 @@ void exec_command(char **args)
                                 p_exit_error();
                         else if (args[i+2] != NULL)
                                 p_exit_error();
+                        args[i] = NULL;
                 }
         }
 
@@ -163,7 +182,8 @@ void exec_command(char **args)
         } else if (pid == 0) {
                 if (file_out != NULL)
                         redir(file_out);
-                if (execvp(args[0], args) != -1)
+                if (execvp(args[0], args) < 0)
+                        p_exit_error();
                 p_exit_error();
         } else {
                 c_pid = pid;
@@ -204,6 +224,8 @@ void command_loop(FILE *handle)
                 tokens = tokenize(line);
                 if (tokens == NULL)
                         goto exit_error;
+                else if (strcmp(tokens[0], "\0") == 0)
+                        continue;
 
                 if (strcmp(tokens[0], ">") == 0) {
                         goto exit_error;
@@ -219,8 +241,6 @@ void command_loop(FILE *handle)
                 } else {
                         exec_command(tokens);
                 }
-
-
         } while (!exit_loop);
 
         free(line);

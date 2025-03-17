@@ -27,9 +27,9 @@
  */
 void p_exit_error(void)
 {
-        char error_message[30] = "An error has ocurred\n";
+        char error_message[30] = "An error has occurred\n";
 	fprintf(stderr, "%s", error_message); 
-	exit(1);
+	exit(0);
 }
 
 /*
@@ -83,7 +83,7 @@ char *p_prompt(FILE *handle)
                 return line;
 
         /* Salida en caso de error en la lectura de getline() */
-        return NULL;
+        exit(0);
 }
 
 /*
@@ -118,6 +118,24 @@ char **tokenize(char *line)
        return tokens;
 }
 
+void redir(char *file_out)
+{
+        int fout;
+        FILE *f = fopen(file_out, "w");
+        if (f == NULL)
+                p_exit_error();
+
+        if ((fout = fileno(f)) < 0) {
+                fclose(f);
+                p_exit_error();
+        }
+
+        dup2(fout, 1);
+        dup2(fout, 2);
+
+        fclose(f);
+}
+
 /*
  *      Funcion exec_command
  *      Primero realiza un fork() y ejecuta el comando en el proceso hijo.
@@ -127,19 +145,30 @@ void exec_command(char **args)
 {
         pid_t   pid;
         pid_t   c_pid;
+        char            *file_out       = NULL;
+        
+        for (int i = 0; args[i] != NULL; i++) {
+                if (strcmp(args[i], ">") == 0) {
+                        file_out = args[i+1];
+                        if (file_out == NULL)
+                                p_exit_error();
+                        else if (args[i+2] != NULL)
+                                p_exit_error();
+                }
+        }
 
         pid = fork();
         if (pid < 0) {
                 p_exit_error();
         } else if (pid == 0) {
-                execvp(args[0], args);
-                exit(0);
+                if (file_out != NULL)
+                        redir(file_out);
+                if (execvp(args[0], args) != -1)
+                p_exit_error();
         } else {
                 c_pid = pid;
+                waitpid(c_pid, NULL, 0);
         }
-
-        waitpid(c_pid, NULL, 0);
-
 }
 
 /*
@@ -173,20 +202,25 @@ void command_loop(FILE *handle)
 
                 /* Tokenizar la linea */
                 tokens = tokenize(line);
-                if (tokens == NULL) {
+                if (tokens == NULL)
                         goto exit_error;
-                } else if (!strcmp(tokens[0], "exit")) {
+
+                if (strcmp(tokens[0], ">") == 0) {
+                        goto exit_error;
+                } else if (strcmp(tokens[0], "exit") == 0) {
                         if (tokens[1] != NULL)
                                 goto exit_error;
                         exit_loop = 1;
-                } else if (!strcmp(tokens[0], "cd")) {
+                } else if (strcmp(tokens[0], "cd") == 0) {
                         if (tokens[1] == NULL ||
                             tokens[2] != NULL)
                                 goto exit_error;
-                        chdir(tokens[1]);
+                        else    chdir(tokens[1]);
                 } else {
                         exec_command(tokens);
                 }
+
+
         } while (!exit_loop);
 
         free(line);

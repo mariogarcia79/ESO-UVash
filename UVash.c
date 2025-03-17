@@ -6,24 +6,20 @@
 #include <sys/wait.h>
 
 /*
- *      Definir los diferentes tamanyos para buffers. El buffer de getline() es
- *      de 20 caracteres, un tamanyo mas que razonable para un comando normal.
- *      De esta forma reducimos el numero de realloc() que hay que realizar.
- *      Por el contrario, el buffer de strtok() tiene 15 caracteres porque
- *      se quitan los espacios y es muy complicado que haya un argumento mas
- *      largo que 15 caracteres (a menos que sea el path a algun lado).
+ *      Define the different buffer sizes.
+ *      This is in order to reduce the number of realloc() that are needed.
  */
 #define GETLINE_BUFSIZE 20
 #define STRTOK_BUFSIZE 15
 
-/*      Delimitadores a contar para strtok. */
 #define STRTOK_DELIMITERS " \t\n"
 
 /*
- *      Funcion p_exit_error
- *      Toma como argumento el mensaje a imprimir.
- *	Escribe en la salida estandar el mensaje de error correctamente 
- *	formateado y sale del programa con codigo de error 1.
+ *      Function p_exit_error
+ *
+ *      Arguments:      None.
+ *      Description:    It prints in standard error the correctly formatted
+ *                      error, and then exits the program with return code 1.
  */
 void p_exit_error(void)
 {
@@ -33,13 +29,15 @@ void p_exit_error(void)
 }
 
 /*
- *      Funcion get_handle
- *      Toma como argumentos los argumentos de main().
- *      Primero hace parsing a estos argumentos y realiza las comprobaciones
- *      oportunas de ficheros, numero de argumentos... etc.
- *      Si hay un argumento, se abre el fichero con su nombre. Si no hay
- *      argumento, se asigna stdin.
- *      Se devuelve el fichero abierto.
+ *      Function get_handle
+ *
+ *      Arguments:      argc: argument count from main().
+ *                      argv: argument list from main().
+ *      Description:    First the function parses the arguments and checks for
+ *                      file errors, and number of arguments.
+ *                      If a file is taken as an argument, it is opened. If
+ *                      there are no arguments, then stdin is used as the file.
+ *      Returns:        Opened file.
  */
 FILE *get_handle(int  argc,
                  char ** argv)
@@ -63,13 +61,15 @@ FILE *get_handle(int  argc,
 }
 
 /*
- *      Funcion p_prompt
- *      Escribe por pantalla el prompt y devuelve el puntero a la cadena
- *      obtenida de la lectura por teclado. Esta cadena ha sido reservada, asi
- *      que hay que liberarla al terminar su uso.
- *      El archivo se ha de pasar abierto, ya sea stdin o un batch file.
- *      Devuelve una cadena reservada de forma dinamica. Por tanto hay que
- *      liberarla cuando ya no se use. 
+ *      Function p_prompt
+ *      
+ *      Arguments:      handle: an opened file for printing.
+ *      Description:    If the handle is stdin, then a prompt is printed.
+ *                      However, if the handle is another file (a batch file),
+ *                      then the prompt is not printed.
+ *                      Then the program reads from the file.
+ *      Returns:        The line read dynamically allocated.
+ *                      MUST BE FREED.
  */
 char *p_prompt(FILE *handle)
 {
@@ -78,24 +78,23 @@ char *p_prompt(FILE *handle)
 
 	line  = (char*)malloc(sizeof(char*)*n);
 
-        /* Mostrar el prompt solo si los comandos se ejecutan desde stdin */
         if (handle == stdin)
                 fprintf(stdout, "UVash> ");
-        /* Leer la linea y devolverla */
+
         if (getline(&line, &n, handle) != -1)
                 return line;
 
-        /* Salida en caso de error en la lectura de getline() */
         exit(0);
 }
 
 /*
- *      Funcion tokenize
- *      Separa la linea por espacios. No importa el numero de espacios que haya
- *      separando un token del siguiente. Tambien elimina las tabulaciones y 
- *      los saltos de linea. Devuelve un array de cadenas reservado de forma
- *      dinamica.
- *      Hay que liberar el array cuando se deje de usar.
+ *      Function tokenize
+ *
+ *      Arguments:      line: Line to tokenize.
+ *      Description:    Separates the line into tokens, removing spaces,
+ *                      tabulations and line feeds.
+ *      Returns:        A token array dynamically allocated.
+ *                      MUST BE FREED.
  */
 char **tokenize(char *line)
 {
@@ -133,8 +132,12 @@ char **tokenize(char *line)
 
 /*
  *      Function redir
- *      Manages the redirection of stdout to another output using the dup2
- *      system call and appropiately treats file errors.
+ *      
+ *      Arguments:      file_out: the file to redirect output.
+ *      Description:    Manages the redirection of stdout to another output 
+ *                      using the dup2 system call and appropiately treats file 
+ *                      errors.
+ *      Returns:        None.
  */
 void redir(char *file_out)
 {
@@ -155,27 +158,34 @@ void redir(char *file_out)
 }
 
 /*
- *      Funcion exec_command
- *      Primero realiza un fork() y ejecuta el comando en el proceso hijo.
- *      El proceso padre espera a que el proceso hijo termine.
+ *      Function exec_command
+ *
+ *      Arguments:      args: the command arguments.
+ *      Description:    Manages redirections and executes the command specified
+ *                      in the arguments (args[0]). Also passes the arguments
+ *                      for the specific command.
+ *      Returns:        None.
  */
-void exec_command(char **args)
+void exec_command(char **args) 
 {
         pid_t   pid;
         pid_t   c_pid;
-        char            *file_out       = NULL;
+        char    *file_out = NULL;
         
+        /* Parse the redirections and manage files */
         for (int i = 0; args[i] != NULL; i++) {
                 if (strcmp(args[i], ">") == 0) {
                         file_out = args[i+1];
                         if (file_out == NULL)
                                 p_exit_error();
-                        else if (args[i+2] != NULL)
+                        else if (args[i+2] != NULL &&
+                                 strcmp(args[i+2], "&"))
                                 p_exit_error();
                         args[i] = NULL;
                 }
         }
 
+        /* Execute the command */
         pid = fork();
         if (pid < 0) {
                 p_exit_error();
@@ -192,22 +202,47 @@ void exec_command(char **args)
 }
 
 /*
- *      Funcion command_loop
- *      Es el bucle principal de programa. Primero muestra la prompt por
- *      pantalla (solo en el caso de stdin), espera a la entrada de usuario y
- *      tokeniza la linea. Despues ejecuta los comandos correspondientes.
+ *      Function exec_from_prompt
  *
- *      Usar gotos en este caso esta justificado para centralizar la salida de
- *      la funcion en caso de error, ya que aunque realicemos un exit() y el
- *      sistema operativo se encargue del cleanup, es una buena practica
- *      liberar la memoria y los ficheros antes de salir. (Si un fichero no se
- *      cierra bien se puede corromper...).
+ *      Arguments:      tokens: the tokens from the command line.
+ *      Description:    Separates the different commands from the prompt and
+ *                      then calls exec_command() for executing them.
+ *      Returns:        None.
+ */
+void exec_from_prompt(char **tokens)
+{
+        if (strcmp(tokens[0], "&") == 0)
+                p_exit_error();
+
+        exec_command(tokens);
+        while (*tokens != NULL) {
+                if (strcmp(*tokens, "&") == 0) {
+                        /* Jump over the & token */
+                        tokens++;
+                        exec_command(tokens);
+                }
+                tokens++;
+        }
+}
+
+/*
+ *      Function command_loop
  *
- *      Las sentencias if() antes de los free() se debe a que queremos evitar
- *      un double free si no se ha llegado a reservar la memoria. (Si se ha
- *      salido antes de tiempo).
+ *      Arguments:      handle: the input file handle.
+ *      Description:    Main loop of the program. Firstly shows a prompt in
+ *                      stdout (Only when handle is stdin), waits for user
+ *                      input and then parses the line.
+ *                      After this, it executes the corresponding commands.
  *
- *      Es buena practica hacer las cosas explicitas!
+ *      Notes:          The use of gotos in this case is justified because
+ *                      it centralizes error managing and cleaning files and
+ *                      pointers. That way, code is not repeated and it is much
+ *                      more clear.
+ *
+ *                      if() sentences just before free() calls are in place in
+ *                      order to avoid double-freeing resources. This could be
+ *                      the case if the function returned before expected.
+ *      Returns:        None.
  */
 void command_loop(FILE *handle)
 {
@@ -216,17 +251,17 @@ void command_loop(FILE *handle)
         unsigned char   exit_loop       = 0;
 
         do {
-                /* Leer la linea y comprobar los errores */
+                /* Read first line */
                 if ((line = p_prompt(handle)) == NULL)
                         goto exit_error;
 
-                /* Tokenizar la linea */
+                /* Tokenize the line */
                 tokens = tokenize(line);
                 if (tokens == NULL)
                         goto exit_error;
                 else if (strcmp(tokens[0], "\0") == 0)
                         continue;
-
+                /* Check for special tokens */
                 if (strcmp(tokens[0], ">") == 0) {
                         goto exit_error;
                 } else if (strcmp(tokens[0], "exit") == 0) {
@@ -239,27 +274,30 @@ void command_loop(FILE *handle)
                                 goto exit_error;
                         else    chdir(tokens[1]);
                 } else {
-                        exec_command(tokens);
+                        /* Execute the commands from command line */
+                        exec_from_prompt(tokens);
                 }
         } while (!exit_loop);
 
+        /* Free resources */
         free(line);
         free(tokens);
         return;
 
-/* Salida de errores */
 exit_error:
+        /* Clean resources */
         fclose(handle);
         if (line != NULL)
                 free(line);
         if (tokens != NULL)
                 free(tokens);
+        /* Exit */
         p_exit_error();
 }
 
 
 int main (int  argc,
-              char **argv)
+          char **argv)
 {
         FILE *handle = NULL;
         /* Abrir el fichero correspondiente */

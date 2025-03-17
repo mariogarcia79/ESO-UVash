@@ -1,1 +1,0 @@
-../tester/run-tests.sh: line 23: 48821 Segmentation fault      ./UVash tests/21.in
